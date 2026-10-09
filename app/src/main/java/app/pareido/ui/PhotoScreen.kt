@@ -314,10 +314,10 @@ fun PhotoScreen(nav: Navigator, findId: String) {
                     photo = p, scan = scan, layers = layers, modifier = Modifier.fillMaxSize(),
                     showAllEdges = showEdges && (phase == Phase.IDLE || drawing),
                     strokes = if (drawing || phase == Phase.ASKING) strokes else emptyList(),
-                    onStrokeStart = if (drawing) { pt -> strokes.add(listOf(pt)) } else null,
-                    onStrokeMove = if (drawing) { pt ->
+                    onStrokeStart = if (drawing) ({ pt: Pt -> strokes.add(listOf(pt)); Unit }) else null,
+                    onStrokeMove = if (drawing) ({ pt: Pt ->
                         if (strokes.isNotEmpty()) strokes[strokes.lastIndex] = strokes.last() + pt
-                    } else null,
+                    }) else null,
                 )
             }
         }
