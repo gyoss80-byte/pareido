@@ -24,7 +24,7 @@ object EdgeDetector {
     }
 
     /** Below this gradient (0..255 scale) nothing counts as an edge, so flat sky stays empty. */
-    private const val MIN_STRONG_GRADIENT = 10f
+    private const val MIN_STRONG_GRADIENT = 8f
 
     /**
      * @param sensitivity 0 = only the boldest edges, 1 = faint detail too.
@@ -68,8 +68,10 @@ object EdgeDetector {
 
         val thin = nonMaxSuppression(mag, dir, w, h)
 
-        // Thresholds adapt to the photo: the strongest few percent of gradients are "strong".
-        val high = max(MIN_STRONG_GRADIENT, percentileOfNonZero(thin, 0.97f - 0.14f * s))
+        // Thresholds adapt to the photo: only the strongest few percent of all pixels can seed an
+        // edge, so busy textures don't turn into noise. On clean photos the floor decides instead.
+        val floor = MIN_STRONG_GRADIENT + (1f - s) * 12f
+        val high = max(floor, percentile(mag, 0.96f - 0.10f * s))
         val low = high * 0.45f
         return EdgeMap(w, h, hysteresis(thin, w, h, low, high))
     }
@@ -115,13 +117,9 @@ object EdgeDetector {
         return out
     }
 
-    private fun percentileOfNonZero(values: FloatArray, p: Float): Float {
-        var n = 0
-        for (v in values) if (v > 0f) n++
-        if (n == 0) return Float.MAX_VALUE
-        val sorted = FloatArray(n)
-        var k = 0
-        for (v in values) if (v > 0f) sorted[k++] = v
+    private fun percentile(values: FloatArray, p: Float): Float {
+        if (values.isEmpty()) return Float.MAX_VALUE
+        val sorted = values.copyOf()
         sorted.sort()
         val idx = ((sorted.size - 1) * p.coerceIn(0f, 1f)).roundToInt()
         return sorted[idx]

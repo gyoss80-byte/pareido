@@ -155,3 +155,55 @@ class CoreTest {
         assertTrue(params.toString().contains("additionalProperties"))
     }
 }
+
+class ShapeFinderTest {
+    @Test
+    fun groupsTouchingEdgesAndRanksBySize() {
+        val w = 300; val h = 200
+        val sky = 0xFF3A7BD5.toInt(); val cloud = 0xFFF2F2F2.toInt()
+        // A big disc and a small separate square.
+        val px = IntArray(w * h) { i ->
+            val x = i % w; val y = i / w
+            when {
+                kotlin.math.hypot(x - 90f, y - 100f) <= 60f -> cloud
+                x in 220..250 && y in 40..70 -> cloud
+                else -> sky
+            }
+        }
+        val scan = EdgeScanner.scan(PixelImage(w, h, px), 0.5f)
+        val shapes = ShapeFinder.candidates(scan)
+        assertTrue(shapes.size >= 2, "expected two shapes, got $shapes")
+        val first = scan.contours.filter { it.id in shapes[0].contourIds }.flatMap { it.points }
+        assertTrue(first.all { it.x < 160 }, "biggest shape should be the disc")
+        assertTrue(shapes.none { it.byClaude })
+        val allIds = shapes.flatMap { it.contourIds }
+        assertEquals(allIds.size, allIds.toSet().size, "a contour belongs to one shape")
+        assertTrue(ShapeFinder.candidates(EdgeScan(10, 10, 0.5f, emptyList())).isEmpty())
+    }
+}
+
+class NoisyPhotoTest {
+    @Test
+    fun noiseDoesNotDrownTheRealOutline() {
+        val w = 320; val h = 240
+        val rnd = java.util.Random(7)
+        // A soft-edged cloud on sky, with camera-like noise on every pixel.
+        val px = IntArray(w * h) { i ->
+            val x = i % w; val y = i / w
+            val d = kotlin.math.hypot(x - 160f, y - 120f)
+            val t = ((70f - d) / 6f).coerceIn(0f, 1f)
+            fun ch(sky: Int, cloud: Int) = (sky + (cloud - sky) * t + rnd.nextGaussian() * 6).toInt().coerceIn(0, 255)
+            (0xFF shl 24) or (ch(58, 240) shl 16) or (ch(123, 240) shl 8) or ch(213, 242)
+        }
+        val scan = EdgeScanner.scan(PixelImage(w, h, px), 0.5f)
+        assertTrue(scan.contours.isNotEmpty())
+        val longest = scan.contours.first()
+        assertTrue(longest.pixelLength > 2 * Math.PI * 70 * 0.6, "outline too short: ${longest.pixelLength}")
+        for (p in longest.points) {
+            val d = kotlin.math.hypot(p.x - 160f, p.y - 120f)
+            assertTrue(d in 60f..80f, "point $p is ${d}px from centre, off the real edge")
+        }
+        val noise = scan.contours.drop(1).sumOf { it.pixelLength.toDouble() }
+        assertTrue(noise < longest.pixelLength, "too many noise lines: $noise px")
+    }
+}

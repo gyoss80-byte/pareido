@@ -40,6 +40,8 @@ data class Figure(
     @SerialName("contour_ids") val contourIds: List<Int>,
     /** 0..1: how strongly the real edges resemble the figure. */
     val confidence: Float,
+    /** False for shapes found on the phone without Claude (the user names them). */
+    val byClaude: Boolean = true,
 )
 
 @Serializable

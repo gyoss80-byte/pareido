@@ -1,5 +1,7 @@
 package app.pareido.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -32,6 +34,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import app.pareido.Navigator
 import app.pareido.Screen
@@ -73,6 +76,15 @@ fun HomeScreen(nav: Navigator) {
     val take = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { saved ->
         if (saved) importAndOpen { dest -> Images.importPhoto(cameraFile, dest) }
     }
+    // The app declares CAMERA (for live mode), so Android refuses the camera app
+    // until that permission is granted. Ask first instead of crashing.
+    fun launchCamera() {
+        error = null
+        take.launch(FileProvider.getUriForFile(context, "${context.packageName}.files", cameraFile))
+    }
+    val askCamera = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) launchCamera() else error = "Pareido needs camera access to take a photo. You can still pick one from your gallery."
+    }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
@@ -102,8 +114,8 @@ fun HomeScreen(nav: Navigator) {
         if (!hasKey) {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
-                    Text("One-time setup: add your Anthropic API key so Pareido can ask Claude what it sees.")
-                    OutlinedButton(onClick = { nav.go(Screen.Settings) }, Modifier.padding(top = 8.dp)) { Text("Open Settings") }
+                    Text("Works without a key: Pareido finds the real shapes and you name them. Add an Anthropic API key in Settings to have Claude spot figures too.")
+                    OutlinedButton(onClick = { nav.go(Screen.Settings) }, Modifier.padding(top = 8.dp)) { Text("Add a key (optional)") }
                 }
             }
         }
@@ -111,8 +123,8 @@ fun HomeScreen(nav: Navigator) {
         Spacer(Modifier.height(8.dp))
         if (busy) CircularProgressIndicator()
         Button(onClick = {
-            val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", cameraFile)
-            take.launch(uri)
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) launchCamera()
+            else askCamera.launch(Manifest.permission.CAMERA)
         }, Modifier.fillMaxWidth().height(56.dp), enabled = !busy) { Text("📷  Take a photo") }
         Button(onClick = {
             pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
