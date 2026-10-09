@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.Pareido" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#FF0F1B2D</item>
+        <item name="android:statusBarColor">#FF0F1B2D</item>
+        <item name="android:navigationBarColor">#FF0F1B2D</item>
+    </style>
+</resources>
