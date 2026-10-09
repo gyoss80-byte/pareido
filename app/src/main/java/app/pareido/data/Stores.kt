@@ -5,6 +5,8 @@ import app.pareido.core.EdgeScan
 import app.pareido.core.Find
 import app.pareido.core.FindStatus
 import app.pareido.core.Models
+import app.pareido.core.ShapeMatcher
+import app.pareido.core.ShapeTemplate
 import app.pareido.core.Spending
 import app.pareido.core.SpendingSummary
 import app.pareido.core.Streak
@@ -112,6 +114,17 @@ class FindStore(context: Context) {
             .map { Instant.ofEpochMilli(it.createdAtMillis).atZone(zone).toLocalDate() }
         return Streaks.compute(days, today)
     }
+
+    /**
+     * Figures the user outlined and named: the app's memory for finding them again.
+     * Deleting the find forgets the figure.
+     */
+    fun taughtTemplates(): List<ShapeTemplate> =
+        all().filter { it.status == FindStatus.DONE && it.userContours.isNotEmpty() }
+            .mapNotNull { f ->
+                val label = f.userGuess.trim().ifEmpty { f.figures.firstOrNull()?.label.orEmpty() }
+                if (label.isEmpty()) null else ShapeMatcher.template(label, f.userContours)
+            }
 
     fun newFind(id: String, scan: EdgeScan?) =
         Find(id = id, createdAtMillis = System.currentTimeMillis(), mode = app.pareido.core.FindMode.AUTO, status = FindStatus.QUEUED, scan = scan)

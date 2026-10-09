@@ -170,8 +170,12 @@ class PareidoAnalyzer(private val transport: ClaudeTransport, private val model:
      * @param photoJpeg the untouched photo.
      * @param annotatedJpeg the same photo with each contour drawn in colour and labelled with its id.
      * @param exclude labels already found, for "what else could this be?".
+     * @param taught figures this person has outlined before (a hint about what they like to spot).
      */
-    fun findFigures(photoJpeg: ByteArray, annotatedJpeg: ByteArray, scan: EdgeScan, exclude: List<String> = emptyList()): AnalysisResult {
+    fun findFigures(
+        photoJpeg: ByteArray, annotatedJpeg: ByteArray, scan: EdgeScan,
+        exclude: List<String> = emptyList(), taught: List<String> = emptyList(),
+    ): AnalysisResult {
         if (scan.contours.isEmpty()) {
             return AnalysisResult(emptyList(), "No clear edges in this photo. Try raising the edge sensitivity.", TokenUsage(model, 0, 0))
         }
@@ -180,7 +184,7 @@ class PareidoAnalyzer(private val transport: ClaudeTransport, private val model:
                 model = model,
                 system = Prompts.SYSTEM,
                 jpegImages = listOf(photoJpeg, annotatedJpeg),
-                text = Prompts.findFigures(scan, exclude),
+                text = Prompts.findFigures(scan, exclude, taught),
                 schemaJson = Prompts.FIGURES_SCHEMA,
             )
         )
@@ -261,7 +265,7 @@ object Prompts {
           most people would see it right away and 0.3 means it's a stretch.
     """.trimIndent()
 
-    fun findFigures(scan: EdgeScan, exclude: List<String>): String = buildString {
+    fun findFigures(scan: EdgeScan, exclude: List<String>, taught: List<String> = emptyList()): String = buildString {
         appendLine("The photo was analysed at ${scan.width}x${scan.height} px. Numbered edge lines (bounding box in those pixels):")
         for (c in scan.contours) {
             val b = Geometry.bounds(c.points)
@@ -269,6 +273,10 @@ object Prompts {
         }
         appendLine()
         appendLine("Find up to 4 distinct figures. For each one, list exactly the line numbers that form it.")
+        if (taught.isNotEmpty()) {
+            appendLine("This person has spotted these figures before: ${taught.take(20).joinToString(", ")}. Keep an eye out for")
+            appendLine("similar ones, but only propose them if the numbered lines really fit.")
+        }
         if (exclude.isNotEmpty()) {
             appendLine("These were already found, so look for different interpretations: ${exclude.joinToString(", ")}.")
         }

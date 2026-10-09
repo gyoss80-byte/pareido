@@ -48,7 +48,8 @@ import app.pareido.core.Find
 import app.pareido.core.FindMode
 import app.pareido.core.FindStatus
 import app.pareido.core.Pt
-import app.pareido.core.ShapeFinder
+import app.pareido.core.ShapeMatcher
+import app.pareido.core.ShapeTemplate
 import app.pareido.core.Snapping
 import app.pareido.data.OutlineStyle
 import app.pareido.image.Images
@@ -91,6 +92,9 @@ fun PhotoScreen(nav: Navigator, findId: String) {
     var coverage by remember { mutableStateOf(0f) }
 
     val hasKey = settings.apiKey.isNotBlank()
+    var taught by remember { mutableStateOf<List<ShapeTemplate>>(emptyList()) }
+    fun reloadTaught() { scope.launch { taught = withContext(Dispatchers.IO) { app.finds.taughtTemplates() } } }
+    LaunchedEffect(Unit) { reloadTaught() }
     val style = settings.outlineStyle
     val color = settings.outlineColor
     val width = settings.outlineWidthDp
@@ -213,25 +217,31 @@ fun PhotoScreen(nav: Navigator, findId: String) {
                         userContours = userContours, userGuess = guess, userMatch = userMatch,
                     )
                 )
+                reloadTaught()
             } catch (e: Exception) {
                 message = errorText(e); phase = Phase.DRAWING
             }
         }
     }
 
-    // ---- No-API-key mode: shapes come from the phone, names come from you ----
+    // ---- No-API-key mode: the phone looks for figures you've taught it ----
 
-    fun findShapesLocally() {
+    fun findTaughtLocally() {
         val s = scan ?: return
         message = null
-        figures.clear(); figures.addAll(ShapeFinder.candidates(s)); selected = 0
-        comment = ""
-        phase = Phase.RESULT
-        if (figures.isNotEmpty()) {
-            save(Find(findId, System.currentTimeMillis(), FindMode.AUTO, FindStatus.DONE, scan = s, figures = figures.toList()))
+        phase = Phase.ANALYZING
+        scope.launch {
+            val found = withContext(Dispatchers.Default) { ShapeMatcher.findTaught(s, taught) }
+            figures.clear(); figures.addAll(found); selected = 0
+            comment = ""
+            phase = Phase.RESULT
+            if (found.isNotEmpty()) {
+                save(Find(findId, System.currentTimeMillis(), FindMode.AUTO, FindStatus.DONE, scan = s, figures = found))
+            }
         }
     }
 
+    /** Saves the user's own outline + name. It also becomes a taught figure. */
     fun saveOwnTracing() {
         val s = scan ?: return
         if (guess.isBlank()) { message = "Type what you see, then save."; return }
@@ -242,19 +252,13 @@ fun PhotoScreen(nav: Navigator, findId: String) {
         comment = ""
         userMatch = ""
         phase = Phase.MANUAL_RESULT
-        save(
-            Find(
-                findId, System.currentTimeMillis(), FindMode.MANUAL, FindStatus.DONE, scan = s,
-                figures = figures.toList(), userStroke = strokes.flatten(),
-                userContours = userContours, userGuess = guess,
-            )
+        val f = Find(
+            findId, System.currentTimeMillis(), FindMode.MANUAL, FindStatus.DONE, scan = s,
+            figures = figures.toList(), userStroke = strokes.flatten(),
+            userContours = userContours, userGuess = guess,
         )
-    }
-
-    fun renameFigure(index: Int, name: String) {
-        if (name.isBlank() || index !in figures.indices) return
-        figures[index] = figures[index].copy(label = name.trim())
-        saved?.let { save(it.copy(figures = figures.toList())) }
+        saved = f
+        scope.launch { withContext(Dispatchers.IO) { app.finds.save(f) }; reloadTaught() }
     }
 
     fun revealChallenge() {
@@ -358,6 +362,7 @@ fun PhotoScreen(nav: Navigator, findId: String) {
                     onStrokeMove = if (drawing) ({ pt: Pt ->
                         if (strokes.isNotEmpty()) strokes[strokes.lastIndex] = strokes.last() + pt
                     }) else null,
+                    onStrokeCancel = if (drawing) ({ if (strokes.isNotEmpty()) strokes.removeAt(strokes.lastIndex); Unit }) else null,
                 )
             }
         }
@@ -383,29 +388,33 @@ fun PhotoScreen(nav: Navigator, findId: String) {
                     if (hasKey) {
                         Button(onClick = { findFigures() }, Modifier.fillMaxWidth(), enabled = scan != null) { Text("✨ Find figures") }
                     } else {
-                        Button(onClick = { findShapesLocally() }, Modifier.fillMaxWidth(), enabled = scan != null) { Text("🔍 Find shapes") }
+                        Button(onClick = { findTaughtLocally() }, Modifier.fillMaxWidth(), enabled = scan != null && taught.isNotEmpty()) {
+                            Text("🔍 Find figures I've taught (${taught.size})")
+                        }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { drawMode = FindMode.MANUAL; strokes.clear(); phase = Phase.DRAWING }, Modifier.weight(1f)) { Text("✏️ I see something") }
+                        OutlinedButton(onClick = { drawMode = FindMode.MANUAL; strokes.clear(); phase = Phase.DRAWING }, Modifier.weight(1f)) { Text("✏️ Outline a figure") }
                         OutlinedButton(
                             onClick = { drawMode = FindMode.CHALLENGE; strokes.clear(); phase = Phase.DRAWING },
                             Modifier.weight(1f), enabled = hasKey,
                         ) { Text("🏁 Challenge me") }
                     }
                     if (!hasKey) Text(
-                        "No API key: Pareido highlights the real shapes and you name them. Add a key in Settings to have Claude spot figures and to unlock Challenge mode.",
+                        if (taught.isEmpty()) "Teach Pareido: tap Outline a figure, trace something you see and name it. It will look for figures like it in new photos. Add an API key in Settings to have Claude find anything."
+                        else "Without an API key Pareido only finds figures shaped like ones you've outlined. Add a key in Settings to have Claude find anything and to unlock Challenge mode.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     TextButton(onClick = { friendChallenge() }) { Text("📨 Send to a friend: what do they see?") }
                 }
                 Phase.ANALYZING, Phase.ASKING -> {
-                    Text("Claude is looking at the edges…")
+                    Text(if (hasKey) "Claude is looking at the edges…" else "Looking for figures you've taught…")
                     LinearProgressIndicator(Modifier.fillMaxWidth())
                 }
                 Phase.DRAWING -> {
                     Text(
                         if (drawMode == FindMode.CHALLENGE) "Trace the figure you see, name it, then reveal what Claude sees."
-                        else "Trace around what you see with your finger. Pareido keeps only the real edges along your line."
+                        else "Trace around what you see with one finger. Pinch with two fingers to zoom in. Pareido keeps only the real edges along your line" +
+                            if (hasKey) "." else ", and remembers the figure so it can find similar ones."
                     )
                     OutlinedTextField(
                         guess, { guess = it }, Modifier.fillMaxWidth(), singleLine = true,
@@ -430,12 +439,12 @@ fun PhotoScreen(nav: Navigator, findId: String) {
                     figures, selected, { selected = it }, comment, showOutline, { showOutline = it },
                     onMore = if (hasKey) ({ findFigures(more = true) }) else null,
                     onShare = { shareResult() },
-                    onRename = { name -> renameFigure(selected, name) },
                 )
                 Phase.MANUAL_RESULT -> {
                     val f = figures.firstOrNull()
                     Text(f?.label?.replaceFirstChar { it.uppercase() } ?: "?", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                     f?.description?.takeIf { it.isNotBlank() }?.let { Text(it) }
+                    Text("✓ Pareido learned this figure and will look for similar ones in new photos.", style = MaterialTheme.typography.bodySmall)
                     if (guess.isNotBlank() && f?.byClaude == true) Text(
                         "You said \"$guess\": " + when (userMatch) {
                             "yes" -> "Claude agrees! 🎉"
@@ -494,13 +503,12 @@ private fun OutlineToggleAndShare(show: Boolean, onShow: (Boolean) -> Unit, onSh
 private fun ResultPanel(
     figures: List<Figure>, selected: Int, onSelect: (Int) -> Unit, comment: String,
     showOutline: Boolean, onShowOutline: (Boolean) -> Unit, onMore: (() -> Unit)?, onShare: () -> Unit,
-    onRename: (String) -> Unit,
 ) {
     if (figures.isEmpty()) {
-        Text(if (onMore != null) "No figure found" else "No clear shapes", style = MaterialTheme.typography.headlineSmall)
+        Text("No figure found", style = MaterialTheme.typography.headlineSmall)
         Text(comment.ifBlank {
             if (onMore != null) "Claude didn't see a convincing figure in these edges."
-            else "There aren't enough strong edges here. Try raising the edge sensitivity."
+            else "None of the figures you've taught are in this photo."
         })
         Text("Try another angle, adjust the edge sensitivity, or trace what you see yourself.", style = MaterialTheme.typography.bodySmall)
         onMore?.let { OutlinedButton(onClick = it) { Text("Look again") } }
@@ -513,13 +521,9 @@ private fun ResultPanel(
         Text(matchStrength(f.confidence), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         Text(f.description)
     } else {
-        // Found on the phone: the outline is real, the name is yours.
-        var name by remember(selected, f.label) { mutableStateOf("") }
-        Text("This is a real shape from your photo. What does it look like to you?")
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(name, { name = it }, Modifier.weight(1f), singleLine = true, label = { Text("Name it") })
-            Button(onClick = { onRename(name) }, enabled = name.isNotBlank()) { Text("Save") }
-        }
+        // Found on the phone by comparing with figures the user outlined before.
+        Text("Shaped like your ${f.label} · ${(f.confidence * 100).toInt()}% match", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        Text(f.description)
     }
     if (comment.isNotBlank()) Text(comment, style = MaterialTheme.typography.bodySmall)
     OutlineToggleAndShare(showOutline, onShowOutline, onShare)

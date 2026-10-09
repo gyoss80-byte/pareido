@@ -4,9 +4,13 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
 import app.pareido.ui.GalleryScreen
 import app.pareido.ui.HomeScreen
 import app.pareido.ui.LiveCameraScreen
@@ -36,7 +40,12 @@ class Navigator(private val stack: MutableList<Screen>) {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { PareidoTheme { AppRoot() } }
+        setContent {
+            PareidoTheme {
+                // Surface sets the default text colour (light on navy) for every screen.
+                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) { AppRoot() }
+            }
+        }
     }
 }
 

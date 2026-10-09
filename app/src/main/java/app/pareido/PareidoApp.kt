@@ -54,7 +54,8 @@ class ClaudeService(private val context: Context) {
     fun findFigures(photo: Bitmap, scan: EdgeScan, exclude: List<String> = emptyList()): AnalysisResult {
         val a = analyzer()
         if (!isOnline()) throw ClaudeException(ClaudeException.Kind.OFFLINE, "You're offline.")
-        val result = a.findFigures(Images.photoForClaude(photo), Images.annotatedForClaude(photo, scan), scan, exclude)
+        val taught = app.finds.taughtTemplates().map { it.label }.distinct()
+        val result = a.findFigures(Images.photoForClaude(photo), Images.annotatedForClaude(photo, scan), scan, exclude, taught)
         app.usage.record(result.usage)
         return result
     }

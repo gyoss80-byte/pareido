@@ -119,11 +119,12 @@ class CoreTest {
                 TokenUsage(Models.OPUS, 10, 20),
             )
         }
-        val result = PareidoAnalyzer(fake).findFigures(byteArrayOf(1), byteArrayOf(2), scan, exclude = listOf("sun"))
+        val result = PareidoAnalyzer(fake).findFigures(byteArrayOf(1), byteArrayOf(2), scan, exclude = listOf("sun"), taught = listOf("dragon"))
         assertEquals(listOf(Figure("moon", "round", listOf(realId), 0.8f)), result.figures)
         assertEquals("nice sky", result.comment)
         assertTrue(sent!!.text.contains("#$realId"))
         assertTrue(sent!!.text.contains("sun"))
+        assertTrue(sent!!.text.contains("dragon"))
         assertEquals(2, sent!!.jpegImages.size)
     }
 
